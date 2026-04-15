@@ -28,8 +28,9 @@ app.include_router(appointments.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
  
 
+
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to FreshPath API"}
+def root():
+    return {"message": "Hello World"}
 
  
