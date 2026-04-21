@@ -44,24 +44,33 @@ def signup(user: user_schemas.UserCreate, db: Session = Depends(database.get_db)
 
 @router.post("/login")
 def login(user: user_schemas.UserLogin, db: Session = Depends(database.get_db)):
-    email = user.email.lower().strip()
-    
-    
-    if email == ADMIN_EMAIL and user.password == ADMIN_PASSWORD:
-        return {
-            "id": 0, 
-            "name": "Administrator", 
-            "email": ADMIN_EMAIL, 
-            "role": "admin", 
-            "token": ADMIN_TOKEN
-        }
+    try:
+        email = user.email.lower().strip()
         
-    db_user = db.query(models.User).filter(models.User.email == email).first()
-    if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
-        )
-    return {"id": db_user.id, "name": db_user.name, "email": db_user.email, "role": "user"}
+        # Admin check
+        if email == ADMIN_EMAIL and user.password == ADMIN_PASSWORD:
+            return {
+                "id": 0, 
+                "name": "Administrator", 
+                "email": ADMIN_EMAIL, 
+                "role": "admin", 
+                "token": ADMIN_TOKEN
+            }
+            
+        # User check
+        db_user = db.query(models.User).filter(models.User.email == email).first()
+        if not db_user:
+            raise HTTPException(status_code=401, detail="User not found")
+            
+        if not verify_password(user.password, db_user.password):
+            raise HTTPException(status_code=401, detail="Invalid password")
+            
+        return {"id": db_user.id, "name": db_user.name, "email": db_user.email, "role": "user"}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"LOGIN ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
 @router.get("/me", response_model=user_schemas.UserResponse)
@@ -105,7 +114,10 @@ def update_me(
             del update_data["target_quit_date"]
 
     for key, value in update_data.items():
-        setattr(db_user, key, value)
+        if key == "password" and value:
+            setattr(db_user, key, get_password_hash(value))
+        else:
+            setattr(db_user, key, value)
 
     try:
         db.commit()
@@ -166,7 +178,10 @@ def update_user(
             del update_data["target_quit_date"]
 
     for key, value in update_data.items():
-        setattr(db_user, key, value)
+        if key == "password" and value:
+            setattr(db_user, key, get_password_hash(value))
+        else:
+            setattr(db_user, key, value)
 
     try:
         db.commit()

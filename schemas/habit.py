@@ -4,6 +4,7 @@ from datetime import date
 
 class HabitCreate(BaseModel):
     name: str
+    created_at: date = None
 
 
 class HabitUpdate(BaseModel):

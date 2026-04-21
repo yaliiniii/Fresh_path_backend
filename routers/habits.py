@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import date as date_obj
+from datetime import date as date_obj, timedelta
 import models, database
 from schemas import habit as habit_schemas
 from typing import List
@@ -22,25 +22,44 @@ def get_all_habits(user_id: int, db: Session = Depends(database.get_db)):
         models.Habit.user_id == user_id
     ).all()
 
-    tracked_dates = sorted(list(set(c.date for c in completions)))
+    # Helper to ensure we have a date object (not datetime)
+    def to_date(d):
+        return d.date() if hasattr(d, 'date') else d
+
+    # Get all relevant dates (from earliest track or 7 days ago, until today)
+    all_dates_set = {date_obj.today(), date_obj.today() - timedelta(days=6)}
+    for c in completions:
+        if c.date:
+            all_dates_set.add(to_date(c.date))
+    
+    first_date = min(all_dates_set)
+    today = date_obj.today()
+    
+    # Generate all dates in the range
+    all_dates = []
+    curr = first_date
+    while curr <= today:
+        all_dates.append(curr)
+        curr += timedelta(days=1)
 
     results = []
 
-    for d in tracked_dates:
+    for d in all_dates:
+        # Pre-filter completions for this date to speed up
         completion_map = {
             c.habit_definition_id: c.completed
             for c in completions
-            if c.date == d
+            if to_date(c.date) == d
         }
 
         for definition in definitions:
-            if definition.created_at <= d:
-                results.append({
-                    "id": definition.id,
-                    "name": definition.name,
-                    "completed": completion_map.get(definition.id, False),
-                    "date": d
-                })
+            # Show all habits for all dates in the range
+            results.append({
+                "id": definition.id,
+                "name": definition.name,
+                "completed": completion_map.get(definition.id, False),
+                "date": d
+            })
 
     return results
 
@@ -85,11 +104,13 @@ def create_habit(
     user_id: int,
     db: Session = Depends(database.get_db),
 ):
+    # Use provided created_at if available and valid
+    creation_date = habit.created_at if habit.created_at else date_obj.today()
 
     db_definition = models.HabitDefinition(
         name=habit.name,
         user_id=user_id,
-        created_at=date_obj.today()
+        created_at=creation_date
     )
 
     db.add(db_definition)
@@ -100,7 +121,7 @@ def create_habit(
         "id": db_definition.id,
         "name": db_definition.name,
         "completed": False,
-        "date": date_obj.today()
+        "date": creation_date
     }
 
 
